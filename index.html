@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🍽️스슐랭 맛집지도</title>
+    <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=a3af8fbddc042c9ec075f3f00b48c45a"></script>
+    <style>
+        body, html { margin: 0; padding: 0; font-family: 'Pretendard', sans-serif; height: 100%; background: #f8f9fa; }
+        .header { padding: 15px 20px; background: white; border-bottom: 1px solid #eee; position: sticky; top: 0; z-index: 100; }
+        .header h1 { margin: 0; font-size: 20px; color: #333; }
+        .header p { margin: 5px 0 0; font-size: 13px; color: #666; }
+        .filter-container { padding: 10px 20px; background: white; overflow-x: auto; white-space: nowrap; border-bottom: 1px solid #eee; }
+        .filter-btn { padding: 6px 12px; border: 1px solid #ddd; border-radius: 20px; background: white; margin-right: 8px; cursor: pointer; font-size: 13px; }
+        .filter-btn.active { background: #333; color: white; border-color: #333; }
+        #map { width: 100%; height: 40vh; background: #e9ecef; }
+        .list-container { padding: 20px; height: calc(60vh - 130px); overflow-y: auto; }
+        .card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+        .card-title { font-weight: bold; font-size: 16px; margin: 0; }
+        .card-desc { font-size: 14px; color: #555; margin-bottom: 10px; line-height: 1.4; }
+        .card-footer { display: flex; gap: 8px; font-size: 12px; color: #888; }
+        .tag { background: #f1f3f5; padding: 4px 8px; border-radius: 4px; }
+        
+        /* 커스텀 오버레이 (핀) 스타일 */
+        .custom-pin { padding: 5px 10px; border-radius: 20px; color: white; font-size: 12px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2); border: 2px solid white; text-align: center; }
+        .pin-한식 { background: #e03131; }
+        .pin-카페 { background: #fcc419; color: #333; }
+        .pin-일식 { background: #1c7ed6; }
+        .pin-중식 { background: #f08c00; }
+        .pin-양식 { background: #2f9e44; }
+        .pin-스파크플러스 { background: #212529; border-radius: 4px; padding: 6px 12px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>🍽️스슐랭 맛집지도</h1>
+        <p>입주사가 직접 추천하는 찐 맛집 리스트</p>
+    </div>
+
+    <div class="filter-container" id="filters">
+        <button class="filter-btn active" data-category="전체">전체</button>
+        <button class="filter-btn" data-category="한식">한식</button>
+        <button class="filter-btn" data-category="카페">카페·디저트</button>
+        <button class="filter-btn" data-category="일식">일식</button>
+        <button class="filter-btn" data-category="중식">중식</button>
+        <button class="filter-btn" data-category="양식">양식·기타</button>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="list-container" id="restaurant-list">
+        </div>
+
+    <script>
+        // ==========================================
+        // 설정 영역 (여기를 수정하세요)
+        // ==========================================
+        const CONFIG = {
+    	// 🟢 완벽하게 발급받은 웹 게시용 CSV 주소
+
+	SHEET_CSV_URL: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSu07FV82WUBXfJ69jQKCiqhlY62lNXvvSRQ0YJ_MpLBQ86NRnSjDGJ21V4xavN_f3xTNjmrX0JENop/pub?gid=0&single=true&output=csv",
+    
+    BRANCH: {
+        name: "스파크플러스 강남점",
+        lat: 37.498095, 
+        lng: 127.027610
+    }
+};
+
+        let map;
+        let markers = [];
+        let allData = [];
+
+        // 1. 지도 초기화
+        function initMap() {
+            const mapContainer = document.getElementById('map');
+            const mapOption = { 
+                center: new kakao.maps.LatLng(CONFIG.BRANCH.lat, CONFIG.BRANCH.lng), 
+                level: 3 
+            };
+            map = new kakao.maps.Map(mapContainer, mapOption);
+
+            // 스파크플러스 핀 고정 추가
+            const branchContent = `<div class="custom-pin pin-스파크플러스">⬛ ${CONFIG.BRANCH.name}</div>`;
+            new kakao.maps.CustomOverlay({
+                map: map,
+                position: new kakao.maps.LatLng(CONFIG.BRANCH.lat, CONFIG.BRANCH.lng),
+                content: branchContent,
+                yAnchor: 1
+            });
+        }
+
+        // 2. CSV 파서 (정규식 활용)
+        function parseCSV(text) {
+            const rows = text.split('\n').filter(row => row.trim());
+            const headers = rows[0].split(',').map(h => h.trim().replace(/\r/g, ''));
+            
+            return rows.slice(1).map(row => {
+                // 따옴표 내의 콤마를 무시하고 파싱하기 위한 간단한 정규식
+                const values = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || [];
+                let obj = {};
+                headers.forEach((h, i) => {
+                    let val = values[i] ? values[i].replace(/(^"|"$)/g, '').replace(/\r/g, '').trim() : '';
+                    obj[h] = val;
+                });
+                return obj;
+            });
+        }
+
+        // 3. 구글 시트 데이터 가져오기
+        async function fetchSheetData() {
+            try {
+                const response = await fetch(CONFIG.SHEET_CSV_URL);
+                const csvText = await response.text();
+                const data = parseCSV(csvText);
+                
+                // 노출이 TRUE인 데이터만 필터링
+                allData = data.filter(item => item['노출'].toUpperCase() === 'TRUE');
+                renderMapAndList('전체');
+            } catch (error) {
+                console.error('데이터를 불러오지 못했습니다:', error);
+                document.getElementById('restaurant-list').innerHTML = '<p style="text-align:center; padding: 20px;">데이터를 불러오는 중 오류가 발생했습니다.<br>구글 시트 게시 상태와 URL을 확인해주세요.</p>';
+            }
+        }
+
+        // 4. 지도 핀 및 리스트 렌더링
+        function renderMapAndList(category) {
+            // 기존 마커 제거
+            markers.forEach(marker => marker.setMap(null));
+            markers = [];
+
+            const listContainer = document.getElementById('restaurant-list');
+            listContainer.innerHTML = '';
+
+            const filteredData = category === '전체' ? allData : allData.filter(item => item['카테고리'].includes(category));
+
+            filteredData.forEach(item => {
+                // 핀 색상 매핑 (카테고리명 기반)
+                let pinClass = "pin-양식"; // 기본값
+                if(item['카테고리'].includes('한식')) pinClass = 'pin-한식';
+                else if(item['카테고리'].includes('카페')) pinClass = 'pin-카페';
+                else if(item['카테고리'].includes('일식')) pinClass = 'pin-일식';
+                else if(item['카테고리'].includes('중식')) pinClass = 'pin-중식';
+
+                // 커스텀 오버레이(핀) 생성
+                const content = `<div class="custom-pin ${pinClass}">${item['이름']}</div>`;
+                const position = new kakao.maps.LatLng(parseFloat(item['위도']), parseFloat(item['경도']));
+                
+                const customOverlay = new kakao.maps.CustomOverlay({
+                    position: position,
+                    content: content,
+                    yAnchor: 1
+                });
+                customOverlay.setMap(map);
+                markers.push(customOverlay);
+
+                // 리스트 카드 생성
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `
+                    <div class="card-header">
+                        <h3 class="card-title">${item['이모지'] || ''} ${item['이름']}</h3>
+                    </div>
+                    <p class="card-desc">"${item['한줄평']}"</p>
+                    <div class="card-footer">
+                        <span class="tag">${item['카테고리']}</span>
+                        <span class="tag">${item['가격대']}</span>
+                        ${item['태그'] ? `<span class="tag">${item['태그']}</span>` : ''}
+                    </div>
+                `;
+                listContainer.appendChild(card);
+            });
+        }
+
+        // 5. 필터 버튼 이벤트 설정
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                renderMapAndList(e.target.dataset.category);
+            });
+        });
+
+        // 초기 실행
+        initMap();
+        fetchSheetData();
+    </script>
+</body>
+</html>

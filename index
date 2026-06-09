@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🍽️스슐랭 맛집지도</title>
+    <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=a3af8fbddc042c9ec075f3f00b48c45a&autoload=false"></script>
+    <style>
+        body, html { margin: 0; padding: 0; font-family: 'Pretendard', sans-serif; height: 100%; background: #f8f9fa; }
+        .header { padding: 15px 20px; background: white; border-bottom: 1px solid #eee; position: sticky; top: 0; z-index: 100; }
+        .header h1 { margin: 0; font-size: 20px; color: #333; }
+        .header p { margin: 5px 0 0; font-size: 13px; color: #666; }
+        
+        .filter-container { padding: 10px 20px; background: white; overflow-x: auto; white-space: nowrap; border-bottom: 1px solid #eee; }
+        
+        /* 필터 버튼 기본 스타일 */
+        .filter-btn { 
+            padding: 6px 14px; 
+            border: 1px solid #ddd; 
+            border-radius: 20px; 
+            background: #fff; 
+            margin-right: 8px; 
+            cursor: pointer; 
+            font-size: 13px; 
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        /* 카테고리 버튼별 색상 계열 매칭 */
+        .filter-btn[data-category="전체"] { border-color: #adb5bd; color: #495057; background: #f8f9fa; }
+        .filter-btn[data-category="전체"].active { background: #343a40; border-color: #343a40; color: #fff; }
+        .filter-btn[data-category="스파크플러스"] { border-color: #212529; color: #212529; background: #f1f3f5; }
+        .filter-btn[data-category="스파크플러스"].active { background: #212529; border-color: #212529; color: #fff; }
+        .filter-btn[data-category="한식"] { border-color: #ffc9c9; color: #e03131; background: #fff5f5; }
+        .filter-btn[data-category="한식"].active { background: #e03131; border-color: #e03131; color: #fff; }
+        .filter-btn[data-category="카페"] { border-color: #ffe3e3; color: #f08c00; background: #fff9db; }
+        .filter-btn[data-category="카페"].active { background: #fcc419; border-color: #fcc419; color: #333; }
+        .filter-btn[data-category="일식"] { border-color: #a5d8ff; color: #1c7ed6; background: #e7f5ff; }
+        .filter-btn[data-category="일식"].active { background: #1c7ed6; border-color: #1c7ed6; color: #fff; }
+        .filter-btn[data-category="중식"] { border-color: #ffd8a8; color: #f08c00; background: #fff4e6; }
+        .filter-btn[data-category="중식"].active { background: #f08c00; border-color: #f08c00; color: #fff; }
+        .filter-btn[data-category="양식"] { border-color: #b2f2bb; color: #2f9e44; background: #ebfbee; }
+        .filter-btn[data-category="양식"].active { background: #2f9e44; border-color: #2f9e44; color: #fff; }
+        .filter-btn[data-category="아시안"] { border-color: #fcc2d7; color: #a61e4d; background: #fff0f6; }
+        .filter-btn[data-category="아시안"].active { background: #a61e4d; border-color: #a61e4d; color: #fff; }
+        .filter-btn[data-category="도시락"] { border-color: #63e6be; color: #087f5b; background: #e6fcf5; }
+        .filter-btn[data-category="도시락"].active { background: #0ca678; border-color: #0ca678; color: #fff; }
+        .filter-btn[data-category="술집"] { border-color: #d0bfff; color: #7048e8; background: #f3f0ff; }
+        .filter-btn[data-category="술집"].active { background: #7048e8; border-color: #7048e8; color: #fff; }
+
+        .search-container { padding: 12px 20px; background: #f1f3f5; border-bottom: 1px solid #e9ecef; }
+        .search-input {
+            width: 100%;
+            padding: 10px 16px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 14px;
+            box-sizing: border-box;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+        .search-input:focus {
+            border-color: #212529;
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(33,37,41,0.05);
+        }
+
+        #map { width: 100%; height: 40vh; background: #e9ecef; }
+        
+        .list-container { padding: 20px; height: calc(60vh - 180px); overflow-y: auto; scroll-behavior: smooth; }
+        
+        /* 맛집 카드 스타일 */
+        .card { 
+            background: white; 
+            border-radius: 12px; 
+            padding: 16px; 
+            margin-bottom: 12px; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
+            cursor: pointer; 
+            transition: transform 0.2s, box-shadow 0.2s;
+            position: relative;
+        }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        
+        /* 선택된 활성화 카드 하이라이트 효과 */
+        .card.active-target {
+            border: 2px solid #212529;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+            background: #fffdf5;
+        }
+
+        .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding-right: 185px; }
+        .card-title { font-weight: bold; font-size: 16px; margin: 0; }
+        .card-desc { font-size: 14px; color: #555; margin-bottom: 10px; line-height: 1.4; padding-right: 185px; }
+        .card-footer { display: flex; gap: 8px; font-size: 12px; color: #888; flex-wrap: wrap; padding-right: 185px; }
+        .tag { background: #f1f3f5; padding: 4px 8px; border-radius: 4px; }
+        
+        /* 우측 버튼 묶음 컨테이너 스타일 */
+        .btn-group {
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        /* 카카오맵 바로가기 버튼 스타일 */
+        .map-link-btn {
+            padding: 8px 12px;
+            background: #fee500; 
+            color: #191919;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: bold;
+            text-decoration: none;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: background 0.2s;
+            display: inline-flex;
+            align-items: center;
+            white-space: nowrap;
+        }
+        .map-link-btn:hover { background: #fada0a; }
+
+        /* 스플 전용 문의하기 버튼 스타일 */
+        .inquiry-btn {
+            padding: 8px 12px;
+            background: #ffffff; 
+            color: #212529;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: bold;
+            text-decoration: none;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            white-space: nowrap;
+        }
+        .inquiry-btn:hover { background: #f8f9fa; border-color: #adb5bd; }
+
+        /* 카테고리별 핀 색상 테마 정의 */
+        .pin-한식 { --pin-bg-color: #e03131; --pin-text-color: white; }
+        .pin-카페 { --pin-bg-color: #fcc419; --pin-text-color: #333; }
+        .pin-일식 { --pin-bg-color: #1c7ed6; --pin-text-color: white; }
+        .pin-중식 { --pin-bg-color: #f08c00; --pin-text-color: white; }
+        .pin-양식 { --pin-bg-color: #2f9e44; --pin-text-color: white; }
+        .pin-아시안 { --pin-bg-color: #a61e4d; --pin-text-color: white; }
+        .pin-도시락 { --pin-bg-color: #0ca678; --pin-text-color: white; }
+        .pin-술집 { --pin-bg-color: #7048e8; --pin-text-color: white; }
+        .pin-스파크플러스 { --pin-bg-color: #212529; --pin-text-color: white; }
+        
+        /* 둥근 말풍선 핀 본체 및 삼각형 꼬리 스타일 */
+        .custom-pin { 
+            position: relative;
+            padding: 6px 12px; 
+            border-radius: 12px; 
+            background-color: var(--pin-bg-color, #2f9e44); 
+            color: var(--pin-text-color, white); 
+            font-size: 12px; 
+            font-weight: bold; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15); 
+            text-align: center; 
+            white-space: nowrap;
+            cursor: pointer; 
+        }
+        .custom-pin::after {
+            content: '';
+            position: absolute;
+            bottom: -8px; 
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 8px 6px 0; 
+            border-style: solid;
+            border-color: var(--pin-bg-color, #2f9e44) transparent transparent transparent; 
+            display: block;
+            width: 0;
+            height: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>🍽️스슐랭 맛집지도</h1>
+        <p>스플인들에게 꼭 맞는 맞춤형 맛집 지도😋</p>
+        <p>위치하신 스플 지점을 클릭하면 근처 맛집들이 나와요!</p>
+        <p>🤫본 지도는 스플인들의 또간집들로 엄선하여 제작되었습니다.</p>
+    </div>
+
+    <div class="filter-container" id="filters">
+        <button class="filter-btn active" data-category="전체">전체</button>
+        <button class="filter-btn" data-category="스파크플러스">스파크플러스</button>
+        <button class="filter-btn" data-category="한식">한식</button>
+        <button class="filter-btn" data-category="카페">카페·디저트</button>
+        <button class="filter-btn" data-category="일식">일식</button>
+        <button class="filter-btn" data-category="중식">중식</button>
+        <button class="filter-btn" data-category="양식">양식</button>
+        <button class="filter-btn" data-category="아시안">아시안</button>
+        <button class="filter-btn" data-category="도시락">도시락</button>
+        <button class="filter-btn" data-category="술집">술집</button>
+    </div>
+
+    <div class="search-container">
+        <input type="text" id="search-input" class="search-input" placeholder="🔍 원하는 맛집과 키워드를 검색해보세요 (예: 혼밥, 회식, 가성비)...">
+    </div>
+
+    <div id="map"></div>
+
+    <div class="list-container" id="restaurant-list"></div>
+
+    <script>
+        const CONFIG = {
+            SHEET_CSV_URL: "https://docs.google.com/spreadsheets/d/e/2PACX-1vSu07FV82WUBXfJ69jQKCiqhlY62lNXvvSRQ0YJ_MpLBQ86NRnSjDGJ21V4xavN_f3xTNjmrX0JENop/pub?gid=0&single=true&output=csv",
+            BRANCH: {
+                lat: 37.495085, 
+                lng: 127.035252
+            }
+        };
+
+        let map;
+        let markers = [];
+        let allData = [];
+        let currentCategory = '전체'; 
+        let refLat = null;
+        let refLng = null;
+        let selectedTargetId = null;
+        
+        let isInitialLoad = true; 
+
+        function initMap() {
+            const mapContainer = document.getElementById('map');
+            const mapOption = { 
+                center: new kakao.maps.LatLng(CONFIG.BRANCH.lat, CONFIG.BRANCH.lng), 
+                level: 3 
+            };
+            map = new kakao.maps.Map(mapContainer, mapOption);
+        }
+
+        function getDistance(lat1, lng1, lat2, lng2) {
+            if (!lat1 || !lng1 || !lat2 || !lng2) return 999999;
+            const dy = parseFloat(lat1) - parseFloat(lat2);
+            const dx = parseFloat(lng1) - parseFloat(lng2);
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function parseCSV(text) {
+            const rows = [];
+            let row = [];
+            let insideQuote = false;
+            let entries = '';
+
+            for (let i = 0; i < text.length; i++) {
+                let char = text[i];
+                let nextChar = text[i+1];
+
+                if (char === '"') {
+                    if (insideQuote && nextChar === '"') { entries += '"'; i++; }
+                    else { insideQuote = !insideQuote; }
+                } else if (char === ',' && !insideQuote) {
+                    row.push(entries.trim().replace(/\r/g, ''));
+                    entries = '';
+                } else if ((char === '\n' || char === '\r') && !insideQuote) {
+                    if (char === '\r' && nextChar === '\n') { i++; }
+                    row.push(entries.trim().replace(/\r/g, ''));
+                    if (row.length > 1 || row[0] !== '') rows.push(row);
+                    row = [];
+                    entries = '';
+                } else {
+                    entries += char;
+                }
+            }
+            if (entries || row.length > 0) {
+                row.push(entries.trim().replace(/\r/g, ''));
+                rows.push(row);
+            }
+
+            const headers = rows[0];
+            return rows.slice(1).map((r, index) => {
+                let obj = {};
+                headers.forEach((h, i) => {
+                    obj[h] = r[i] || '';
+                });
+                obj.uid = 'place_' + index; 
+                return obj;
+            });
+        }
+
+        async function fetchSheetData() {
+            try {
+                const response = await fetch(CONFIG.SHEET_CSV_URL);
+                const csvText = await response.text();
+                const data = parseCSV(csvText);
+                
+                allData = data.filter(item => item['노출'] && item['노출'].trim().toUpperCase() === 'TRUE').map(item => {
+                    let finalLat = 0;
+                    let finalLng = 0;
+                    let mapUrl = item['카카오맵URL'] || item['lat']; 
+                    
+                    if (mapUrl && String(mapUrl).includes('urlX=') && String(mapUrl).includes('urlY=')) {
+                        try {
+                            const urlParams = new URLSearchParams(mapUrl.split('?')[1]);
+                            const x = parseFloat(urlParams.get('urlX'));
+                            const y = parseFloat(urlParams.get('urlY'));
+                            
+                            if (!isNaN(x) && !isNaN(y)) {
+                                const coords = new kakao.maps.Coords(x, y);
+                                const latlng = coords.toLatLng();
+                                finalLat = latlng.getLat();
+                                finalLng = latlng.getLng();
+                            }
+                        } catch(e) {
+                            console.error('URL 좌표 변환 실패:', e);
+                        }
+                    } else {
+                        finalLat = parseFloat(item['lat'] || item['위도']);
+                        finalLng = parseFloat(item['lng'] || item['경도']);
+                    }
+                    
+                    item.computedLat = finalLat;
+                    item.computedLng = finalLng;
+                    item.rawMapUrl = (mapUrl && mapUrl.startsWith('http')) ? mapUrl : 'https://map.kakao.com';
+                    return item;
+                });
+
+                renderMapAndList();
+            } catch (error) {
+                console.error('데이터 오류:', error);
+            }
+        }
+
+        function renderMapAndList(shouldScrollToTarget = false) {
+            markers.forEach(marker => marker.setMap(null));
+            markers = [];
+            const listContainer = document.getElementById('restaurant-list');
+            listContainer.innerHTML = '';
+
+            const keyword = document.getElementById('search-input').value.trim().toLowerCase();
+
+            // 🟢 [하단 리스트 리스트 용 데이터 큐레이션] 원래 매커니즘 유지
+            let listFiltered = currentCategory === '전체' ? allData : allData.filter(item => item['카테고리'] && item['카테고리'].includes(currentCategory));
+
+            if (keyword) {
+                listFiltered = listFiltered.filter(item => {
+                    const name = (item['이름'] || '').toLowerCase();
+                    const desc = (item['한줄평'] || '').toLowerCase();
+                    const tag = (item['태그'] || '').toLowerCase();
+                    return name.includes(keyword) || desc.includes(keyword) || tag.includes(keyword);
+                });
+            }
+
+            if (refLat && refLng) {
+                listFiltered.sort((a, b) => {
+                    const distA = getDistance(refLat, refLng, a.computedLat, a.computedLng);
+                    const distB = getDistance(refLat, refLng, b.computedLat, b.computedLng);
+                    return distA - distB;
+                });
+            } else {
+                listFiltered.sort((a, b) => {
+                    const aIsSP = (a['카테고리'] || '').includes('스파크플러스');
+                    const bIsSP = (b['카테고리'] || '').includes('스파크플러스');
+                    
+                    if (aIsSP && !bIsSP) return -1;
+                    if (!aIsSP && bIsSP) return 1;
+                    
+                    const nameA = a['이름'] || '';
+                    const nameB = b['이름'] || '';
+                    return nameA.localeCompare(nameB, 'ko');
+                });
+            }
+
+            // 🟢 [지도 핀 마커용 데이터 독립 제어 제어]
+            // 선택된 카테고리에 포함되거나, 혹은 카테고리에 상관없이 '스파크플러스' 지점이라면 지도 핀 데이터셋에 무조건 합류시킵니다!
+            let mapFiltered = allData.filter(item => {
+                let cate = item['카테고리'] || '';
+                let matchCategory = currentCategory === '전체' || cate.includes(currentCategory);
+                let isSP = cate.includes('스파크플러스');
+                return matchCategory || isSP;
+            });
+
+            // 검색어 필터링도 지도 마커에 똑같이 반영하되, 스플 지점은 검색어에 영향받지 않고 상시 노출 노출
+            if (keyword) {
+                mapFiltered = mapFiltered.filter(item => {
+                    let cate = item['카테고리'] || '';
+                    if (cate.includes('스파크플러스')) return true;
+                    
+                    const name = (item['이름'] || '').toLowerCase();
+                    const desc = (item['한줄평'] || '').toLowerCase();
+                    const tag = (item['태그'] || '').toLowerCase();
+                    return name.includes(keyword) || desc.includes(keyword) || tag.includes(keyword);
+                });
+            }
+
+            // 지도 마커 그리기 (상시 노출된 mapFiltered 기반)
+            mapFiltered.forEach(item => {
+                let cate = item['카테고리'] || ''; 
+                let pinClass = "pin-양식"; 
+                if(cate.includes('한식')) pinClass = 'pin-한식';
+                else if(cate.includes('카페')) pinClass = 'pin-카페';
+                else if(cate.includes('일식')) pinClass = 'pin-일식';
+                else if(cate.includes('중식')) pinClass = 'pin-중식';
+                else if(cate.includes('양식')) pinClass = 'pin-양식';
+                else if(cate.includes('아시안')) pinClass = 'pin-아시안';
+                else if(cate.includes('도시락')) pinClass = 'pin-도시락';
+                else if(cate.includes('술집')) pinClass = 'pin-술집';
+                else if(cate.includes('스파크플러스')) pinClass = 'pin-스파크플러스';
+
+                if (item.computedLat && item.computedLng) {
+                    const content = document.createElement('div');
+                    content.className = `custom-pin ${pinClass}`;
+                    content.innerHTML = `${item['이모지'] || ''} ${item['이름'] || ''}`;
+                    
+                    content.addEventListener('click', () => {
+                        refLat = item.computedLat;
+                        refLng = item.computedLng;
+                        selectedTargetId = item.uid; 
+                        map.panTo(new kakao.maps.LatLng(item.computedLat, item.computedLng));
+
+                        if (cate.includes('스파크플러스')) {
+                            currentCategory = '전체';
+                            document.querySelectorAll('.filter-btn').forEach(b => {
+                                if (b.dataset.category === '전체') b.classList.add('active');
+                                else b.classList.remove('active');
+                            });
+                        }
+                        renderMapAndList(true);
+                    });
+
+                    const customOverlay = new kakao.maps.CustomOverlay({
+                        position: new kakao.maps.LatLng(item.computedLat, item.computedLng),
+                        content: content,
+                        yAnchor: 1.18 
+                    });
+                    customOverlay.setMap(map);
+                    markers.push(customOverlay);
+                }
+            });
+
+            // 하단 리스트 카드 그리기 (카테고리에 엄격히 필터링된 listFiltered 기반)
+            if (listFiltered.length === 0) {
+                listContainer.innerHTML = '<p style="text-align:center; color:#888; padding:30px; font-size:14px;">🔍 검색 결과에 맞는 맛집이 없습니다.</p>';
+            } else {
+                listFiltered.forEach(item => {
+                    let cate = item['카테고리'] || '';
+                    let card = document.createElement('div');
+                    card.className = 'card';
+                    card.id = item.uid; 
+                    
+                    if (selectedTargetId === item.uid) {
+                        card.classList.add('active-target');
+                    }
+
+                    let inquiryBtnHtml = '';
+                    if (cate.includes('스파크플러스')) {
+                        inquiryBtnHtml = `<button class="inquiry-btn">✉️ 문의하기</button>`;
+                    }
+
+                    card.innerHTML = `
+                        <div class="card-header">
+                            <h3 class="card-title">${item['이모지'] || ''} ${item['이름'] || ''}</h3>
+                        </div>
+                        <p class="card-desc">${item['한줄평'] ? `"${item['한줄평']}"` : ''}</p>
+                        <div class="card-footer">
+                            ${item['카테고리'] ? `<span class="tag">${item['카테고리']}</span>` : ''}
+                            ${item['가격대'] ? `<span class="tag">${item['가격대']}</span>` : ''}
+                            ${item['태그'] ? `<span class="tag">${item['태그']}</span>` : ''}
+                        </div>
+                        <div class="btn-group">
+                            ${inquiryBtnHtml}
+                            <button class="map-link-btn" data-url="${item.rawMapUrl}">🗺️ 상세위치</button>
+                        </div>
+                    `;
+
+                    if (item.computedLat && item.computedLng) {
+                        card.addEventListener('click', () => {
+                            const moveLatLng = new kakao.maps.LatLng(item.computedLat, item.computedLng);
+                            map.panTo(moveLatLng); 
+                            
+                            refLat = item.computedLat;
+                            refLng = item.computedLng;
+                            selectedTargetId = item.uid;
+
+                            if (cate.includes('스파크플러스')) {
+                                currentCategory = '전체';
+                                document.querySelectorAll('.filter-btn').forEach(b => {
+                                    if (b.dataset.category === '전체') b.classList.add('active');
+                                    else b.classList.remove('active');
+                                });
+                            }
+                            renderMapAndList(false); 
+                        });
+                    }
+
+                    const linkBtn = card.querySelector('.map-link-btn');
+                    linkBtn.addEventListener('click', (e) => {
+                        e.stopPropagation(); 
+                        const targetUrl = e.target.getAttribute('data-url');
+                        window.open(targetUrl, '_blank'); 
+                    });
+
+                    const inqBtn = card.querySelector('.inquiry-btn');
+                    if (inqBtn) {
+                        inqBtn.addEventListener('click', (e) => {
+                            e.stopPropagation(); 
+                            window.open('https://www.sparkplus.co/office', '_blank'); 
+                        });
+                    }
+
+                    listContainer.appendChild(card);
+                });
+            }
+
+            if (shouldScrollToTarget && selectedTargetId) {
+                setTimeout(() => {
+                    const targetCard = document.getElementById(selectedTargetId);
+                    if (targetCard) {
+                        targetCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                }, 100);
+            }
+
+            if (isInitialLoad || (!refLat && currentCategory === '전체')) {
+                setTimeout(() => {
+                    if (map) {
+                        map.setCenter(new kakao.maps.LatLng(CONFIG.BRANCH.lat, CONFIG.BRANCH.lng));
+                        map.panTo(new kakao.maps.LatLng(CONFIG.BRANCH.lat, CONFIG.BRANCH.lng));
+                    }
+                }, 100);
+                isInitialLoad = false; 
+            }
+        }
+
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                currentCategory = e.target.dataset.category; 
+                refLat = null;
+                refLng = null;
+                selectedTargetId = null; 
+                renderMapAndList();
+            });
+        });
+
+        document.getElementById('search-input').addEventListener('input', () => {
+            refLat = null;
+            refLng = null;
+            selectedTargetId = null; 
+            renderMapAndList();
+        });
+
+        kakao.maps.load(function() {
+            initMap();
+            fetchSheetData();
+        });
+    </script>
+</body>
+</html>

@@ -1,5 +1,136 @@
-<script>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🍽️스슐랭 맛집지도</title>
+    <script type="text/javascript" src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=mtis6g20cr"></script>
+    <style>
+        body, html { margin: 0; padding: 0; font-family: 'Pretendard', sans-serif; height: 100%; background: #f8f9fa; }
+        .header { padding: 15px 20px; background: white; border-bottom: 1px solid #eee; position: sticky; top: 0; z-index: 100; }
+        .header h1 { margin: 0; font-size: 20px; color: #333; }
+        .header p { margin: 5px 0 0; font-size: 13px; color: #666; }
+        
+        .filter-container { padding: 10px 20px; background: white; overflow-x: auto; white-space: nowrap; border-bottom: 1px solid #eee; }
+        .filter-btn { 
+            padding: 6px 14px; border: 1px solid #ddd; border-radius: 20px; background: #fff; margin-right: 8px; 
+            cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s ease;
+        }
+
+        /* 카테고리 버튼별 색상 계열 매칭 */
+        .filter-btn[data-category="전체"] { border-color: #adb5bd; color: #495057; background: #f8f9fa; }
+        .filter-btn[data-category="전체"].active { background: #343a40; border-color: #343a40; color: #fff; }
+        .filter-btn[data-category="스파크플러스"] { border-color: #212529; color: #212529; background: #f1f3f5; }
+        .filter-btn[data-category="스파크플러스"].active { background: #212529; border-color: #212529; color: #fff; }
+        .filter-btn[data-category="한식"] { border-color: #ffc9c9; color: #e03131; background: #fff5f5; }
+        .filter-btn[data-category="한식"].active { background: #e03131; border-color: #e03131; color: #fff; }
+        .filter-btn[data-category="카페"] { border-color: #ffe3e3; color: #f08c00; background: #fff9db; }
+        .filter-btn[data-category="카페"].active { background: #fcc419; border-color: #fcc419; color: #333; }
+        .filter-btn[data-category="일식"] { border-color: #a5d8ff; color: #1c7ed6; background: #e7f5ff; }
+        .filter-btn[data-category="일식"].active { background: #1c7ed6; border-color: #1c7ed6; color: #fff; }
+        .filter-btn[data-category="중식"] { border-color: #ffd8a8; color: #f08c00; background: #fff4e6; }
+        .filter-btn[data-category="중식"].active { background: #f08c00; border-color: #f08c00; color: #fff; }
+        .filter-btn[data-category="양식"] { border-color: #b2f2bb; color: #2f9e44; background: #ebfbee; }
+        .filter-btn[data-category="양식"].active { background: #2f9e44; border-color: #2f9e44; color: #fff; }
+        .filter-btn[data-category="아시안"] { border-color: #fcc2d7; color: #a61e4d; background: #fff0f6; }
+        .filter-btn[data-category="아시안"].active { background: #a61e4d; border-color: #a61e4d; color: #fff; }
+        .filter-btn[data-category="도시락"] { border-color: #63e6be; color: #087f5b; background: #e6fcf5; }
+        .filter-btn[data-category="도시락"].active { background: #0ca678; border-color: #0ca678; color: #fff; }
+        .filter-btn[data-category="술집"] { border-color: #d0bfff; color: #7048e8; background: #f3f0ff; }
+        .filter-btn[data-category="술집"].active { background: #7048e8; border-color: #7048e8; color: #fff; }
+
+        .search-container { padding: 12px 20px; background: #f1f3f5; border-bottom: 1px solid #e9ecef; }
+        .search-input {
+            width: 100%; padding: 10px 16px; border: 1px solid #dee2e6; border-radius: 8px;
+            font-size: 14px; box-sizing: border-box; outline: none; transition: all 0.2s ease;
+        }
+        .search-input:focus { border-color: #212529; background: #fff; box-shadow: 0 0 0 3px rgba(33, 37, 41, 0.05); }
+
+        #map { width: 100%; height: 40vh; background: #e9ecef; }
+        .list-container { padding: 20px; height: calc(60vh - 180px); overflow-y: auto; scroll-behavior: smooth; }
+        
+        .card { 
+            background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; position: relative;
+        }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+        .card.active-target { border: 2px solid #212529; box-shadow: 0 4px 16px rgba(0,0,0,0.12); background: #fffdf5; }
+
+        .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding-right: 185px; }
+        .card-title { font-weight: bold; font-size: 16px; margin: 0; }
+        .card-desc { font-size: 14px; color: #555; margin-bottom: 10px; line-height: 1.4; padding-right: 185px; }
+        .card-footer { display: flex; gap: 8px; font-size: 12px; color: #888; flex-wrap: wrap; padding-right: 185px; }
+        .tag { background: #f1f3f5; padding: 4px 8px; border-radius: 4px; }
+        
+        .btn-group { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); display: flex; gap: 6px; align-items: center; }
+        .map-link-btn {
+            padding: 8px 12px; background: #fee500; color: #191919; border: none; border-radius: 6px;
+            font-size: 12px; font-weight: bold; text-decoration: none; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: background 0.2s; display: inline-flex; align-items: center; white-space: nowrap;
+        }
+        .map-link-btn:hover { background: #fada0a; }
+
+        .inquiry-btn {
+            padding: 8px 12px; background: #ffffff; color: #212529; border: 1px solid #ced4da; border-radius: 6px;
+            font-size: 12px; font-weight: bold; text-decoration: none; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: all 0.2s; display: inline-flex; align-items: center; white-space: nowrap;
+        }
+        .inquiry-btn:hover { background: #f8f9fa; border-color: #adb5bd; }
+
+        .pin-한식 { --pin-bg-color: #e03131; --pin-text-color: white; }
+        .pin-카페 { --pin-bg-color: #fcc419; --pin-text-color: #333; }
+        .pin-일식 { --pin-bg-color: #1c7ed6; --pin-text-color: white; }
+        .pin-중식 { --pin-bg-color: #f08c00; --pin-text-color: white; }
+        .pin-양식 { --pin-bg-color: #2f9e44; --pin-text-color: white; }
+        .pin-아시안 { --pin-bg-color: #a61e4d; --pin-text-color: white; }
+        .pin-도시락 { --pin-bg-color: #0ca678; --pin-text-color: white; }
+        .pin-술집 { --pin-bg-color: #7048e8; --pin-text-color: white; }
+        .pin-스파크플러스 { --pin-bg-color: #212529; --pin-text-color: white; }
+        
+        .custom-pin { 
+            position: relative; padding: 6px 12px; border-radius: 12px; background-color: var(--pin-bg-color, #2f9e44); 
+            color: var(--pin-text-color, white); font-size: 12px; font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.15); 
+            text-align: center; white-space: nowrap; cursor: pointer; 
+        }
+        .custom-pin::after {
+            content: ''; position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%);
+            border-width: 8px 6px 0; border-style: solid; border-color: var(--pin-bg-color, #2f9e44) transparent transparent transparent; 
+            display: block; width: 0; height: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>🍽️스슐랭 맛집지도</h1>
+        <p>입주사 분들이 직접 추천하는 찐 맛집 리스트</p>
+        <p>위치하신 스플 지점을 클릭하면 근처 맛집들이 나와요!</p>
+    </div>
+
+    <div class="filter-container" id="filters">
+        <button class="filter-btn active" data-category="전체">전체</button>
+        <button class="filter-btn" data-category="스파크플러스">스파크플러스</button>
+        <button class="filter-btn" data-category="한식">한식</button>
+        <button class="filter-btn" data-category="카페">카페·디저트</button>
+        <button class="filter-btn" data-category="일식">일식</button>
+        <button class="filter-btn" data-category="중식">중식</button>
+        <button class="filter-btn" data-category="양식">양식</button>
+        <button class="filter-btn" data-category="아시안">아시안</button>
+        <button class="filter-btn" data-category="도시락">도시락</button>
+        <button class="filter-btn" data-category="술집">술집</button>
+    </div>
+
+    <div class="search-container">
+        <input type="text" id="search-input" class="search-input" placeholder="🔍 원하는 맛집과 키워드를 검색해보세요 (예: 혼밥, 회식, 가성비)...">
+    </div>
+
+    <div id="map"></div>
+
+    <div class="list-container" id="restaurant-list"></div>
+
+    <script>
         const CONFIG = {
+            // 구글 시트 배포 주소 연동
             SHEET_CSV_URL: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTsVYjgGweLhqF6FX2aiz5H7YCcLlkbi1fFYF4UmF13JAaXW1kwT5Ael47Rb2icfnPvQPsNzQ82ab6O/pub?gid=0&single=true&output=csv",
             BRANCH: {
                 lat: 37.495085, 
@@ -62,7 +193,7 @@
                 const csvText = await response.text();
                 const data = parseCSV(csvText);
                 
-                // 🟢 [가장 안전한 방식] 복잡한 연산 없이 시트에 적힌 '위도', '경도' 숫자를 바로 핀으로 꽂습니다!
+                // 마케터님이 시트에 채워주신 '위도', '경도' 숫자를 가장 안전하게 읽어오는 방식입니다.
                 allData = data.filter(item => item['노출'] && item['노출'].trim().toUpperCase() === 'TRUE').map(item => {
                     item.computedLat = parseFloat(item['위도'] || 0);
                     item.computedLng = parseFloat(item['경도'] || 0);
@@ -257,3 +388,5 @@
         initMap();
         fetchSheetData();
     </script>
+</body>
+</html>

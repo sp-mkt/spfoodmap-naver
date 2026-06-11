@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🍽️스슐랭 맛집지도</title>
+    <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=a3af8fbddc042c9ec075f3f00b48c45a&autoload=false"></script>
     <script type="text/javascript" src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=mtis6g20cr"></script>
     <style>
         body, html { margin: 0; padding: 0; font-family: 'Pretendard', sans-serif; height: 100%; background: #f8f9fa; }
@@ -17,7 +18,6 @@
             cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.2s ease;
         }
 
-        /* 카테고리 버튼별 색상 계열 매칭 */
         .filter-btn[data-category="전체"] { border-color: #adb5bd; color: #495057; background: #f8f9fa; }
         .filter-btn[data-category="전체"].active { background: #343a40; border-color: #343a40; color: #fff; }
         .filter-btn[data-category="스파크플러스"] { border-color: #212529; color: #212529; background: #f1f3f5; }
@@ -103,9 +103,8 @@
 
     <div class="header">
         <h1>🍽️스슐랭 맛집지도</h1>
-        <p>스플인들에게 꼭 맞는 맞춤형 맛집 지도😋</p>
+        <p>입주사 분들이 직접 추천하는 찐 맛집 리스트</p>
         <p>위치하신 스플 지점을 클릭하면 근처 맛집들이 나와요!</p>
-        <p>🤫본 지도는 스플인들의 또간집들로 엄선하여 제작되었습니다.</p>
     </div>
 
     <div class="filter-container" id="filters">
@@ -131,36 +130,20 @@
 
     <script>
         const CONFIG = {
-            // 구글 시트 배포 주소 연동
             SHEET_CSV_URL: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTsVYjgGweLhqF6FX2aiz5H7YCcLlkbi1fFYF4UmF13JAaXW1kwT5Ael47Rb2icfnPvQPsNzQ82ab6O/pub?gid=0&single=true&output=csv",
-            BRANCH: {
-                lat: 37.495085, 
-                lng: 127.035252
-            }
+            BRANCH: { lat: 37.495085, lng: 127.035252 }
         };
 
-        let map;
-        let markers = [];
-        let allData = [];
-        let currentCategory = '전체'; 
-        let refLat = null;
-        let refLng = null;
-        let selectedTargetId = null;
-        let isInitialLoad = true; 
+        let map, markers = [], allData = [], currentCategory = '전체', refLat = null, refLng = null, selectedTargetId = null, isInitialLoad = true; 
 
         function initMap() {
-            const mapContainer = document.getElementById('map');
-            const mapOption = { 
-                center: new naver.maps.LatLng(CONFIG.BRANCH.lat, CONFIG.BRANCH.lng), 
-                zoom: 16 
-            };
-            map = new naver.maps.Map(mapContainer, mapOption);
+            const mapOption = { center: new naver.maps.LatLng(CONFIG.BRANCH.lat, CONFIG.BRANCH.lng), zoom: 16 };
+            map = new naver.maps.Map(document.getElementById('map'), mapOption);
         }
 
         function getDistance(lat1, lng1, lat2, lng2) {
             if (!lat1 || !lng1 || !lat2 || !lng2) return 999999;
-            const dy = parseFloat(lat1) - parseFloat(lat2);
-            const dx = parseFloat(lng1) - parseFloat(lng2);
+            const dy = parseFloat(lat1) - parseFloat(lat2), dx = parseFloat(lng1) - parseFloat(lng2);
             return Math.sqrt(dx * dx + dy * dy);
         }
 
@@ -169,8 +152,7 @@
             for (let i = 0; i < text.length; i++) {
                 let char = text[i]; let nextChar = text[i+1];
                 if (char === '"') {
-                    if (insideQuote && nextChar === '"') { entries += '"'; i++; }
-                    else { insideQuote = !insideQuote; }
+                    if (insideQuote && nextChar === '"') { entries += '"'; i++; } else { insideQuote = !insideQuote; }
                 } else if (char === ',' && !insideQuote) {
                     row.push(entries.trim().replace(/\r/g, '')); entries = '';
                 } else if ((char === '\n' || char === '\r') && !insideQuote) {
@@ -194,20 +176,37 @@
                 const csvText = await response.text();
                 const data = parseCSV(csvText);
                 
-                // 마케터님이 시트에 채워주신 '위도', '경도' 숫자를 가장 안전하게 읽어오는 방식입니다.
                 allData = data.filter(item => item['노출'] && item['노출'].trim().toUpperCase() === 'TRUE').map(item => {
-                    item.computedLat = parseFloat(item['위도'] || 0);
-                    item.computedLng = parseFloat(item['경도'] || 0);
+                    let finalLat = parseFloat(item['위도'] || item['lat'] || 0);
+                    let finalLng = parseFloat(item['경도'] || item['lng'] || 0);
                     
+                    let kakaoUrl = item['카카오맵URL'] || ''; 
                     let naverUrl = item['네이버맵URL'] || '';
-                    item.rawMapUrl = (naverUrl && naverUrl.startsWith('http')) ? naverUrl : 'https://map.naver.com';
+
+                    // 🟢 핵심 로직: 시트에 입력하신 카카오맵 URL 안에서 위경도를 몰래 빼내서 네이버 지도 핀에 꽂습니다!
+                    if (kakaoUrl && String(kakaoUrl).includes('urlX=') && String(kakaoUrl).includes('urlY=')) {
+                        try {
+                            const urlParams = new URLSearchParams(kakaoUrl.split('?')[1]);
+                            const x = parseFloat(urlParams.get('urlX'));
+                            const y = parseFloat(urlParams.get('urlY'));
+                            if (!isNaN(x) && !isNaN(y)) {
+                                const coords = new kakao.maps.Coords(x, y); // 카카오 계산기를 빌려씀
+                                const latlng = coords.toLatLng();
+                                finalLat = latlng.getLat(); 
+                                finalLng = latlng.getLng();
+                            }
+                        } catch(e) { console.error('좌표 변환 실패:', e); }
+                    }
+                    
+                    item.computedLat = finalLat;
+                    item.computedLng = finalLng;
+                    // 상세위치 버튼을 누르면 무조건 네이버맵 URL로 넘겨줍니다.
+                    item.rawMapUrl = (naverUrl && naverUrl.startsWith('http')) ? naverUrl : kakaoUrl;
                     return item;
                 });
 
                 renderMapAndList();
-            } catch (error) { 
-                console.error('데이터 오류:', error); 
-            }
+            } catch (error) { console.error('데이터 오류:', error); }
         }
 
         function renderMapAndList(shouldScrollToTarget = false) {
@@ -240,8 +239,7 @@
                     const bIsSP = (b['카테고리'] || '').includes('스파크플러스');
                     if (aIsSP && !bIsSP) return -1;
                     if (!aIsSP && bIsSP) return 1;
-                    const nameA = a['이름'] || ''; const nameB = b['이름'] || '';
-                    return nameA.localeCompare(nameB, 'ko');
+                    return (a['이름'] || '').localeCompare((b['이름'] || ''), 'ko');
                 });
             }
 
@@ -272,17 +270,13 @@
                 else if(cate.includes('술집')) pinClass = 'pin-술집';
                 else if(cate.includes('스파크플러스')) pinClass = 'pin-스파크플러스';
 
-                // 좌표가 0이 아닐 때만 핀을 렌더링합니다.
+                // 좌표가 존재할 때만 렌더링
                 if (item.computedLat && item.computedLng && item.computedLat !== 0) {
                     const markerContent = `<div class="custom-pin ${pinClass}">${item['이모지'] || ''} ${item['이름'] || ''}</div>`;
-                    
                     const marker = new naver.maps.Marker({
                         position: new naver.maps.LatLng(item.computedLat, item.computedLng),
                         map: map,
-                        icon: {
-                            content: markerContent,
-                            anchor: new naver.maps.Point(50, 32) 
-                        }
+                        icon: { content: markerContent, anchor: new naver.maps.Point(50, 32) }
                     });
 
                     naver.maps.Event.addListener(marker, 'click', function() {
@@ -292,8 +286,7 @@
                         if (cate.includes('스파크플러스')) {
                             currentCategory = '전체';
                             document.querySelectorAll('.filter-btn').forEach(b => {
-                                if (b.dataset.category === '전체') b.classList.add('active');
-                                else b.classList.remove('active');
+                                if (b.dataset.category === '전체') b.classList.add('active'); else b.classList.remove('active');
                             });
                         }
                         renderMapAndList(true);
@@ -332,8 +325,7 @@
                         if (cate.includes('스파크플러스')) {
                             currentCategory = '전체';
                             document.querySelectorAll('.filter-btn').forEach(b => {
-                                if (b.dataset.category === '전체') b.classList.add('active');
-                                else b.classList.remove('active');
+                                if (b.dataset.category === '전체') b.classList.add('active'); else b.classList.remove('active');
                             });
                         }
                         renderMapAndList(false); 
@@ -344,7 +336,7 @@
                     });
 
                     const inqBtn = card.querySelector('.inquiry-btn');
-                    if (inqBtn) { inqBtn.addEventListener('click', (e) => { e.stopPropagation(); window.open('https://mkt.sparkplus.co/4uvnvlT', '_blank'); }); }
+                    if (inqBtn) { inqBtn.addEventListener('click', (e) => { e.stopPropagation(); window.open('https://www.sparkplus.co/office', '_blank'); }); }
 
                     listContainer.appendChild(card);
                 });
@@ -359,9 +351,7 @@
 
             if (isInitialLoad || (!refLat && currentCategory === '전체')) {
                 setTimeout(() => {
-                    if (map) {
-                        map.setCenter(new naver.maps.LatLng(CONFIG.BRANCH.lat, CONFIG.BRANCH.lng));
-                    }
+                    if (map) map.setCenter(new naver.maps.LatLng(CONFIG.BRANCH.lat, CONFIG.BRANCH.lng));
                 }, 100);
                 isInitialLoad = false; 
             }
@@ -374,9 +364,7 @@
                 currentCategory = e.target.dataset.category; 
                 refLat = null; refLng = null; selectedTargetId = null; 
                 
-                if (currentCategory === '전체' && map) {
-                    map.setCenter(new naver.maps.LatLng(CONFIG.BRANCH.lat, CONFIG.BRANCH.lng));
-                }
+                if (currentCategory === '전체' && map) map.setCenter(new naver.maps.LatLng(CONFIG.BRANCH.lat, CONFIG.BRANCH.lng));
                 renderMapAndList();
             });
         });
@@ -385,9 +373,11 @@
             refLat = null; refLng = null; selectedTargetId = null; renderMapAndList();
         });
 
-        // 네이버 전용 구동식 가동
-        initMap();
-        fetchSheetData();
+        // 🟢 백그라운드 카카오 스크립트가 다 로딩된 후 연산 시작
+        kakao.maps.load(function() {
+            initMap();
+            fetchSheetData();
+        });
     </script>
 </body>
 </html>
